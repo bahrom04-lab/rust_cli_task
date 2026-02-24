@@ -6,80 +6,61 @@ use crate::config::Cli;
 use crate::error::CustomError;
 
 use clap::Parser;
-use rand::seq::IndexedRandom;
-use serde;
 use serde::Deserialize;
 
 static BINARY_DATA: &str = include_str!("../data/quotes.json");
 
-#[derive(Deserialize, Debug, PartialEq)]
+#[derive(Deserialize, Debug, PartialEq, Clone)]
 struct Quote {
     author: String,
-    quotes: Vec<String>,
+    quote: String,
+}
+
+impl Default for Quote {
+    fn default() -> Self {
+        Self {
+            author: "Unknown".to_string(),
+            quote: "Some wise words.".to_string(),
+        }
+    }
 }
 
 impl Quote {
-    fn new() -> Self {
-        let author: String = String::new();
-        let quotes: Vec<String> = Vec::new();
-        Self { author, quotes }
-    }
-
-    fn get_quote(self, target_quote: &str, quotes: Vec<Quote>) -> Option<Quote> {
-        for quote in quotes {
-            if target_quote == quote.author {
-                return Some(quote);
-            }
-        }
-        None
-    }
-
-    fn from_json(&self, path: &str) -> Result<Vec<Quote>, CustomError> {
-        serde_json::from_str(path).map_err(CustomError::JsonParse)
+    fn new(author: String, quote: String) -> Self {
+        Self { author, quote }
     }
 }
 
+#[derive(Deserialize)]
+struct Quotes(Vec<Quote>);
+
+impl Quotes {
+    fn restore<T>(path: T) -> Result<Self, CustomError>
+    where
+        T: AsRef<str>,
+    {
+        let data: Vec<Quote> =
+            serde_json::from_str(path.as_ref()).map_err(CustomError::JsonParse)?;
+
+        Ok(Self(data))
+    }
+
+    fn author_quotes<T: AsRef<str>>(author: T, quotes: Vec<Quote>) -> Self {
+        let author = author.as_ref().trim_start_matches("--");
+        let _quotes = &quotes
+            .into_iter()
+            .filter(|q| q.author.eq(author))
+            .collect::<Vec<Quote>>();
+
+        Self(_quotes.to_owned())
+    }
+}
 fn main() {
     let args: Cli = Cli::parse();
-    let quote: Quote = Quote::new();
+    let quotes = Quotes::restore(BINARY_DATA);
 
-    // let () = quote
-    //     .from_json(BINARY_DATA)
-    //     .map_or_else(
-    //         |err| {
-    //             println!("{}", err);
-    //             None
-    //         },
-    //         |quotes| quote.get_quote(&args.author, quotes),
-    //     )
-    //     .map_or_else(
-    //         || {
-    //             println!("todo not found quote error");
-    //         },
-    //         |op| {
-    //             println!(
-    //                 "{:?} says this quotes: {:?}\n",
-    //                 op.author,
-    //                 op.quotes.choose(&mut rand::rng()).unwrap()
-    //             );
-    //         },
-    //     );
+    let all_quotes = quotes.unwrap_or_else(|error| panic!("aaaa {error:?}"));
 
-    match quote.from_json(BINARY_DATA) {
-        Ok(quotes) => match quote.get_quote(&args.author, quotes) {
-            Some(quote) => {
-                println!(
-                    "{:?} says this quotes: {:?}\n",
-                    quote.author,
-                    quote.quotes.choose(&mut rand::rng()).unwrap()
-                );
-            }
-            None => {
-                println!("todo not found quote error");
-            }
-        },
-        Err(e) => {
-            println!("{}", e);
-        }
-    }
+    let author_quotes = Quotes::author_quotes(&args.author, all_quotes.0);
+    println!("{} says these - {:#?}", &args.author, author_quotes.0);
 }
